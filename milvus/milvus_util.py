@@ -74,22 +74,22 @@ def insert_data_into_milvus(collection, vectors, batch_size=10000):
     collection.flush()
     print("Data insertion completed and flushed.")
 
-def create_ivfpq_index(collection):
+def create_ivfpq_index(collection, nlist, m):
     index_params = {
         "metric_type": "L2",
         "index_type": "IVF_PQ",
-        "params": {"nlist": 1000, "m": 16}
+        "params": {"nlist": nlist, "m": m}
     }
 
     print("Creating IVFPQ index...")
     collection.create_index(field_name="vector", index_params=index_params)
     print("IVFPQ Index created.")
     
-def create_hnsw_index(collection):
+def create_hnsw_index(collection, efConstruction, M):
     index_params = {
         "metric_type": "L2",
         "index_type": "HNSW",
-        "params": {"M": 16, "efConstruction": 200}
+        "params": {"M": M, "efConstruction": efConstruction}
     }
 
     print("Creating HNSW index...")
@@ -107,27 +107,33 @@ def create_diskann_index(collection):
     print("DiskANN Index created.")
 
 
-def measure_qps(collection, query_data, search_param, top_k=10):    
+def measure_qps(collection, query_data, index, search_param, top_k=10, batch_size=10000):   
+    print(index)
+    collection.load()
     num_queries = len(query_data)
-    hnsw_search_params = {"params": {"ef": search_param}}
-    diskann_search_params = {"metric_type": "L2", "params": {"search_list": 40}}
-    # ivfpq_search_params = {"params": {"nprobe": search_param}}
-    batch_size = 10000
+    print(num_queries)
+    if index == "hnsw":
+        input_params = {"params": {"ef": search_param[index]}}
+        print(input_params)
+    elif index == "diskann":
+        input_params = {"params": {"search_list": search_param[index]}}
+    else:
+        input_params = {"params": {"nprobe": search_param[index]}}
+
     duration_list = []
     for i in range(0, num_queries, batch_size):
         query_batch = query_data[i:i + batch_size]
         print(f"Querying batch {i // batch_size + 1} of {num_queries // batch_size}...")
         start_time = time.time()
         results = collection.search(
-            query_batch, "vector", param=hnsw_search_params, limit=top_k
+            query_batch, "vector", param=input_params, limit=top_k
         )
         total_time = time.time() - start_time
         duration_list.append(total_time)
 
     overall_qps = num_queries / sum(duration_list)
     write_to_file(f"Overall QPS (Queries per second): {overall_qps:.5f}")
-    write_to_file(
-        f"Total time for {num_queries} queries: {sum(duration_list):.5f} seconds")
+    write_to_file(f"Total time for {num_queries} queries: {sum(duration_list):.5f} seconds")
 
     return results
 
